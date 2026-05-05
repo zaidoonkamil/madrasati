@@ -1,4 +1,4 @@
-const express = require("express");
+﻿const express = require("express");
 const router = express.Router();
 const { Basket, BasketItem, Product } = require("../models");
 const multer = require("multer");
@@ -72,7 +72,7 @@ router.get("/basket/:id", uploads.none(), async (req, res) => {
 
     const basketItems = await BasketItem.findAll({
       where: { basketId: basket.id },
-      include: [{ model: Product, attributes: ['id', 'title', 'price', 'images'] }],
+      include: [{ model: Product, attributes: ['id', 'title', 'price', 'images', 'stock'] }],
     });
 
     // نُعيد العناصر كـ JSON عادي (بدون حقل basket)
@@ -116,3 +116,5 @@ router.delete("/basket/:userId/item/:id", uploads.none(), async (req, res) => {
 
 
 module.exports = router;
+
+

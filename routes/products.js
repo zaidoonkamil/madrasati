@@ -1,4 +1,4 @@
-const express = require("express");
+﻿const express = require("express");
 const router = express.Router();
 const { Op, fn, col, where } = require("sequelize");
 const { Product, User, Category } = require("../models");
@@ -29,10 +29,16 @@ router.post("/products", upload.array("images", 5), async (req, res) => {
     title_ckb,
     description_ar,
     description_ckb,
+    stock,
   } = req.body;
 
   if (!title || !price) {
     return res.status(400).json({ error: "العنوان والسعر مطلوبان" });
+  }
+
+  const stockValue = parseInt(stock) || 0;
+  if (stockValue < 0) {
+    return res.status(400).json({ error: "المخزون يجب أن يكون صفراً أو أكثر" });
   }
 
   if (!req.files || req.files.length === 0) {
@@ -55,6 +61,7 @@ router.post("/products", upload.array("images", 5), async (req, res) => {
       description_ar: description_ar || null,
       description_ckb: description_ckb || null,
       price,
+      stock: stockValue,
       images,
       userId,
       categoryId,
@@ -297,6 +304,34 @@ router.get("/productItem/:id", async (req, res) => {
   }
 });
 
+
+router.patch("/products/:id", upload.none(), async (req, res) => {
+  try {
+    const product = await Product.findByPk(req.params.id);
+    if (!product) {
+      return res.status(404).json({ error: "المنتج غير موجود" });
+    }
+
+    const allowedFields = ["title", "description", "price", "stock"];
+    for (const field of allowedFields) {
+      if (req.body[field] !== undefined) {
+        product[field] = field === "price" || field === "stock"
+          ? parseInt(req.body[field]) || 0
+          : req.body[field];
+      }
+    }
+
+    if (product.price < 0 || product.stock < 0) {
+      return res.status(400).json({ error: "السعر والمخزون يجب أن يكونا صفراً أو أكثر" });
+    }
+
+    await product.save();
+    return res.status(200).json(product);
+  } catch (error) {
+    console.error("Error updating product:", error);
+    return res.status(500).json({ error: "Internal Server Error" });
+  }
+});
 router.delete("/products/:id", async (req, res) => {
   try {
     const product = await Product.findByPk(req.params.id);
@@ -353,3 +388,4 @@ router.get("/products/seller/:sellerId", async (req, res) => {
 });
 
 module.exports = router;
+

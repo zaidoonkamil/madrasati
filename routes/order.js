@@ -1,4 +1,4 @@
-const express = require("express");
+﻿const express = require("express");
 const router = express.Router();
 const { Order, OrderItem, Product, Basket, BasketItem, User } = require("../models");
 const multer = require("multer");
@@ -129,6 +129,9 @@ router.post("/orders/:userId", uploads.none(), async (req, res) => {
     let totalPrice = 0;
     products.forEach((item) => {
       const prod = dbProducts.find((p) => p.id === item.productId);
+      if (prod.stock < item.quantity) {
+        throw new Error(`مخزون المنتج ${prod.title} غير كافٍ. المتوفر: ${prod.stock}`);
+      }
       totalPrice += prod.price * item.quantity;
     });
 
@@ -149,6 +152,9 @@ router.post("/orders/:userId", uploads.none(), async (req, res) => {
         quantity: item.quantity,
         priceAtOrder: prod.price,
       });
+
+      prod.stock -= item.quantity;
+      await prod.save();
 
       if (prod.seller) {
         const message = `تم طلب منتج: ${prod.title} (الكمية: ${item.quantity})`;
@@ -176,7 +182,7 @@ router.post("/orders/:userId", uploads.none(), async (req, res) => {
     });
   } catch (error) {
     console.error("Error creating order:", error);
-    return res.status(500).json({ error: "Internal Server Error" });
+    return res.status(500).json({ error: error.message || "Internal Server Error" });
   }
 });
 
@@ -290,3 +296,4 @@ router.get("/orders/:userId", uploads.none(), async (req, res) => {
 });
 
 module.exports = router;
+

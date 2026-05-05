@@ -1,4 +1,4 @@
-const { DataTypes } = require("sequelize");
+﻿const { DataTypes } = require("sequelize");
 const sequelize = require("../config/db");
 
 const Product = sequelize.define("Product", {
@@ -35,6 +35,11 @@ const Product = sequelize.define("Product", {
         type: DataTypes.FLOAT,
         allowNull: false,
     },
+    stock: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 0,
+    },
     images: {
         type: DataTypes.JSON,
         allowNull: false,
@@ -45,3 +50,4 @@ const Product = sequelize.define("Product", {
 
 
 module.exports = Product;
+
