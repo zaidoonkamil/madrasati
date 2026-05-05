@@ -21,6 +21,11 @@ const Order = sequelize.define(
       type: DataTypes.STRING,
       allowNull: false,
     },
+    deliveryType: {
+      type: DataTypes.ENUM("standard", "express_basra", "pickup"),
+      allowNull: false,
+      defaultValue: "standard",
+    },
     status: {
       type: DataTypes.ENUM("pending", "delivery", "completed", "cancelled"),
       allowNull: false,

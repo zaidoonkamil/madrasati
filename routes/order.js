@@ -7,6 +7,7 @@ const { Op } = require("sequelize");
 const { sendNotificationToUser } = require("../services/notifications");
 
 const ORDER_STATUSES = ["pending", "delivery", "completed", "cancelled"];
+const DELIVERY_TYPES = ["standard", "express_basra", "pickup"];
 
 router.get("/orders/admin/status", async (req, res) => {
   const status = (req.query.status || "").trim();
@@ -56,6 +57,7 @@ router.get("/orders/admin/status", async (req, res) => {
           id: order.id,
           phone: order.phone,
           address: order.address,
+          deliveryType: order.deliveryType || "standard",
           status: order.status,
           createdAt: order.createdAt,
           totalItems: totalItemsOrder,
@@ -95,8 +97,11 @@ router.get("/orders/admin/status", async (req, res) => {
 router.post("/orders/:userId", uploads.none(), async (req, res) => {
   const userId = req.params.userId;
   const { phone, address, products } = req.body;
+  const deliveryType = DELIVERY_TYPES.includes(req.body.deliveryType)
+    ? req.body.deliveryType
+    : "standard";
 
-  if (!phone || !address) {
+  if (!phone || (deliveryType !== "pickup" && !address)) {
     return res.status(400).json({ error: "رقم الهاتف والعنوان مطلوبان" });
   }
 
@@ -130,7 +135,8 @@ router.post("/orders/:userId", uploads.none(), async (req, res) => {
     const order = await Order.create({
       userId,
       phone,
-      address,
+      address: address || "استلام من المتجر",
+      deliveryType,
       totalPrice,
       status: "pending",
     });
@@ -259,6 +265,7 @@ router.get("/orders/:userId", uploads.none(), async (req, res) => {
           totalItems,
           totalPrice,
           status: order.status,
+          deliveryType: order.deliveryType || "standard",
         };
       })
       .filter((order) => order.totalItems > 0);
@@ -269,6 +276,11 @@ router.get("/orders/:userId", uploads.none(), async (req, res) => {
       totalItems: count,
       totalPages,
       currentPage: page,
+      paginationOrdersUser: {
+        totalItems: count,
+        totalPages,
+        currentPage: page,
+      },
       orders: ordersData,
     });
   } catch (error) {
