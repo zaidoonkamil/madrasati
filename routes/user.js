@@ -4,7 +4,7 @@ const jwt = require("jsonwebtoken");
 const multer = require("multer");
 const { Op } = require("sequelize");
 const uploadImage = require("../middlewares/uploads");
-const { User, UserDevice } = require("../models");
+const { User, UserDevice, Favorite, Order } = require("../models");
 const { createOtp, deleteOtpByCode, normalizePhone, verifyOtp } = require("../services/otpService");
 const { ensureWhatsAppReady, sendWhatsAppText } = require("../services/waSender");
 
@@ -389,7 +389,17 @@ router.get("/profile", async (req, res) => {
       if (!user) {
         return res.status(404).json({ error: "User not found" });
       }
-      return res.status(200).json(user);
+
+      const [ordersCount, favoritesCount] = await Promise.all([
+        Order.count({ where: { userId: decoded.id } }),
+        Favorite.count({ where: { userId: decoded.id } }),
+      ]);
+
+      return res.status(200).json({
+        ...user.toJSON(),
+        ordersCount,
+        favoritesCount,
+      });
     } catch (error) {
       console.error("Error fetching user profile:", error);
       return res.status(500).json({ error: "Internal Server Error" });
