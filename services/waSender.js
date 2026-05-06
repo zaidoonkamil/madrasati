@@ -1,12 +1,13 @@
 const path = require("path");
 const fs = require("fs");
+const { execSync } = require("child_process");
 const qrcode = require("qrcode");
 const { Client, LocalAuth } = require("whatsapp-web.js");
 
 const SESSION_PATH = process.env.WHATSAPP_SESSION_PATH
   ? path.resolve(process.env.WHATSAPP_SESSION_PATH)
   : path.join(__dirname, "..", ".wwebjs_auth");
-const CLIENT_ID = process.env.WHATSAPP_CLIENT_ID || "auto-parts-admin";
+const CLIENT_ID = process.env.WHATSAPP_CLIENT_ID || "madrasati";
 const AUTO_INIT = process.env.WHATSAPP_AUTO_INIT !== "false";
 const RECONNECT_DELAY_MS = Number(
   process.env.WHATSAPP_RECONNECT_DELAY_MS || 15000
@@ -38,8 +39,106 @@ function isDetachedFrameError(error) {
   );
 }
 
+function isProfileLockError(error) {
+  const message = String(error?.message || error || "").toLowerCase();
+  return (
+    message.includes("profile appears to be in use") ||
+    message.includes("chromium has locked the profile") ||
+    message.includes("failed to launch the browser process")
+  );
+}
+
 function ensureSessionPath() {
   fs.mkdirSync(SESSION_PATH, { recursive: true });
+}
+
+function getSessionSearchTokens() {
+  const normalized = SESSION_PATH.replace(/\\/g, "/");
+  const authDirName = path.basename(SESSION_PATH);
+  const clientDirName = `session-${CLIENT_ID}`;
+  return [normalized, authDirName, clientDirName].filter(Boolean);
+}
+
+function killChromiumProcessesForSession() {
+  if (process.platform === "win32") {
+    return;
+  }
+
+  const tokens = getSessionSearchTokens();
+
+  for (const token of tokens) {
+    try {
+      execSync(`pkill -f "${token}"`, { stdio: "ignore" });
+    } catch (_) {}
+  }
+
+  try {
+    execSync(`pkill -f "chrome.*${CLIENT_ID}"`, { stdio: "ignore" });
+  } catch (_) {}
+
+  try {
+    execSync(`pkill -f "chromium.*${CLIENT_ID}"`, { stdio: "ignore" });
+  } catch (_) {}
+}
+
+function removeFileIfExists(filePath) {
+  try {
+    if (fs.existsSync(filePath)) {
+      fs.rmSync(filePath, { force: true, recursive: true });
+    }
+  } catch (_) {}
+}
+
+function getClientSessionDirectory() {
+  return path.join(SESSION_PATH, `session-${CLIENT_ID}`);
+}
+
+function removeDirectoryIfExists(dirPath) {
+  try {
+    if (fs.existsSync(dirPath)) {
+      fs.rmSync(dirPath, { recursive: true, force: true });
+    }
+  } catch (_) {}
+}
+
+function clearStaleWhatsAppSession() {
+  removeDirectoryIfExists(getClientSessionDirectory());
+}
+
+function clearChromiumProfileLocks(rootDir) {
+  if (!fs.existsSync(rootDir)) {
+    return;
+  }
+
+  const walk = (currentDir) => {
+    let entries = [];
+    try {
+      entries = fs.readdirSync(currentDir, { withFileTypes: true });
+    } catch (_) {
+      return;
+    }
+
+    for (const entry of entries) {
+      const fullPath = path.join(currentDir, entry.name);
+
+      if (entry.isDirectory()) {
+        walk(fullPath);
+        continue;
+      }
+
+      const isLockFile =
+        entry.name === "SingletonLock" ||
+        entry.name === "SingletonCookie" ||
+        entry.name === "SingletonSocket" ||
+        entry.name.startsWith(".org.chromium.Chromium.");
+
+      if (isLockFile) {
+        removeFileIfExists(fullPath);
+      }
+    }
+  };
+
+  walk(rootDir);
 }
 
 function clearReconnectTimer() {
@@ -200,6 +299,19 @@ function bindClientEvents(instance) {
   });
 }
 
+function buildClient() {
+  return new Client({
+    authStrategy: new LocalAuth({
+      clientId: CLIENT_ID,
+      dataPath: SESSION_PATH,
+    }),
+    puppeteer: {
+      headless: true,
+      args: ["--no-sandbox", "--disable-setuid-sandbox"],
+    },
+  });
+}
+
 async function initWhatsAppClient() {
   if (client) {
     return getStatus();
@@ -215,23 +327,20 @@ async function initWhatsAppClient() {
   manualLogout = false;
   clearReconnectTimer();
   ensureSessionPath();
+  killChromiumProcessesForSession();
+  clearChromiumProfileLocks(SESSION_PATH);
 
-  client = new Client({
-    authStrategy: new LocalAuth({
-      clientId: CLIENT_ID,
-      dataPath: SESSION_PATH,
-    }),
-    puppeteer: {
-      headless: true,
-      args: ["--no-sandbox", "--disable-setuid-sandbox"],
-    },
-  });
-
+  client = buildClient();
   bindClientEvents(client);
 
   initializingPromise = client
     .initialize()
     .catch((error) => {
+      if (isProfileLockError(error)) {
+        killChromiumProcessesForSession();
+        clearChromiumProfileLocks(SESSION_PATH);
+        clearStaleWhatsAppSession();
+      }
       latestError = error.message;
       connectionStatus = "failed";
       client = null;
@@ -242,7 +351,39 @@ async function initWhatsAppClient() {
       initializingPromise = null;
     });
 
-  await initializingPromise;
+  try {
+    await initializingPromise;
+  } catch (error) {
+    if (!isProfileLockError(error)) {
+      throw error;
+    }
+
+    killChromiumProcessesForSession();
+    clearChromiumProfileLocks(SESSION_PATH);
+    clearStaleWhatsAppSession();
+    connectionStatus = "initializing";
+    latestError =
+      "Retrying after clearing Chromium locks and stale WhatsApp session";
+
+    client = buildClient();
+    bindClientEvents(client);
+
+    initializingPromise = client
+      .initialize()
+      .catch((retryError) => {
+        latestError = retryError.message;
+        connectionStatus = "failed";
+        client = null;
+        scheduleReconnect(retryError.message);
+        throw retryError;
+      })
+      .finally(() => {
+        initializingPromise = null;
+      });
+
+    await initializingPromise;
+  }
+
   return getStatus();
 }
 
@@ -305,6 +446,7 @@ async function logoutWhatsApp() {
     latestQrText = null;
     latestQrImage = null;
     connectedNumber = null;
+    clearStaleWhatsAppSession();
     return { success: true, status: connectionStatus };
   }
 
@@ -324,6 +466,7 @@ async function logoutWhatsApp() {
   connectionStatus = "idle";
   authenticated = false;
   connectedNumber = null;
+  clearStaleWhatsAppSession();
 
   return { success: true, status: connectionStatus };
 }
