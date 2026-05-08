@@ -77,11 +77,24 @@ router.post("/products", upload.array("images", 5), async (req, res) => {
 router.get("/products/search", async (req, res) => {
   const query = (req.query.q || "").trim().toLowerCase();
   const userId = parseInt(req.query.userId);
+  const categoryId = parseInt(req.query.categoryId);
+  const minPrice = parseInt(req.query.minPrice);
+  const maxPrice = parseInt(req.query.maxPrice);
+  const availableOnly = req.query.availableOnly === "true";
+  const favoritesOnly = req.query.favoritesOnly === "true";
+  const sortBy = req.query.sortBy || "relevance";
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 20;
   const offset = (page - 1) * limit;
+  const hasFilters =
+    !Number.isNaN(categoryId) ||
+    !Number.isNaN(minPrice) ||
+    !Number.isNaN(maxPrice) ||
+    availableOnly ||
+    favoritesOnly ||
+    sortBy !== "relevance";
 
-  if (!query || query.length < 2) {
+  if ((!query || query.length < 2) && !hasFilters) {
     return res.json({
       totalItems: 0,
       totalPages: 0,
@@ -106,7 +119,7 @@ router.get("/products/search", async (req, res) => {
         model: User,
         as: "favoritedByUsers",
         where: { id: userId },
-        required: false,
+        required: favoritesOnly,
         attributes: ["id"],
         through: { attributes: [] },
       });
@@ -114,37 +127,77 @@ router.get("/products/search", async (req, res) => {
 
     const startsWithQuery = Product.sequelize.escape(`${query}%`);
     const containsQuery = Product.sequelize.escape(`%${query}%`);
+    const productWhere = {};
+
+    if (query && query.length >= 2) {
+      productWhere[Op.or] = [
+        where(fn("LOWER", col("Product.title")), { [Op.like]: `%${query}%` }),
+        where(fn("LOWER", col("Product.description")), { [Op.like]: `%${query}%` }),
+        where(fn("LOWER", fn("COALESCE", col("Product.title_ar"), "")), { [Op.like]: `%${query}%` }),
+        where(fn("LOWER", fn("COALESCE", col("Product.title_ckb"), "")), { [Op.like]: `%${query}%` }),
+        where(fn("LOWER", fn("COALESCE", col("Product.description_ar"), "")), { [Op.like]: `%${query}%` }),
+        where(fn("LOWER", fn("COALESCE", col("Product.description_ckb"), "")), { [Op.like]: `%${query}%` }),
+      ];
+    }
+
+    if (!Number.isNaN(categoryId)) {
+      productWhere.categoryId = categoryId;
+    }
+
+    if (!Number.isNaN(minPrice) || !Number.isNaN(maxPrice)) {
+      productWhere.price = {};
+      if (!Number.isNaN(minPrice)) productWhere.price[Op.gte] = minPrice;
+      if (!Number.isNaN(maxPrice)) productWhere.price[Op.lte] = maxPrice;
+    }
+
+    if (availableOnly) {
+      productWhere.stock = { [Op.gt]: 0 };
+    }
+
+    let order = [];
+    switch (sortBy) {
+      case "price_low":
+        order = [["price", "ASC"]];
+        break;
+      case "price_high":
+        order = [["price", "DESC"]];
+        break;
+      case "newest":
+        order = [["createdAt", "DESC"]];
+        break;
+      case "name":
+        order = [["title", "ASC"]];
+        break;
+      case "relevance":
+      default:
+        order =
+          query && query.length >= 2
+            ? [
+                [
+                  Product.sequelize.literal(`
+                    CASE
+                      WHEN LOWER(COALESCE(Product.title_ar, Product.title_ckb, Product.title, '')) LIKE ${startsWithQuery} THEN 0
+                      WHEN LOWER(COALESCE(Product.description_ar, Product.description_ckb, Product.description, '')) LIKE ${startsWithQuery} THEN 1
+                      WHEN LOWER(COALESCE(Product.title_ar, Product.title_ckb, Product.title, '')) LIKE ${containsQuery} THEN 2
+                      WHEN LOWER(COALESCE(Product.description_ar, Product.description_ckb, Product.description, '')) LIKE ${containsQuery} THEN 3
+                      ELSE 4
+                    END
+                  `),
+                  "ASC",
+                ],
+                ["createdAt", "DESC"],
+              ]
+            : [["createdAt", "DESC"]];
+        break;
+    }
 
     const { count, rows: products } = await Product.findAndCountAll({
-      where: {
-        [Op.or]: [
-          where(fn("LOWER", col("Product.title")), { [Op.like]: `%${query}%` }),
-          where(fn("LOWER", col("Product.description")), { [Op.like]: `%${query}%` }),
-          where(fn("LOWER", fn("COALESCE", col("Product.title_ar"), "")), { [Op.like]: `%${query}%` }),
-          where(fn("LOWER", fn("COALESCE", col("Product.title_ckb"), "")), { [Op.like]: `%${query}%` }),
-          where(fn("LOWER", fn("COALESCE", col("Product.description_ar"), "")), { [Op.like]: `%${query}%` }),
-          where(fn("LOWER", fn("COALESCE", col("Product.description_ckb"), "")), { [Op.like]: `%${query}%` }),
-        ],
-      },
+      where: productWhere,
       include,
       distinct: true,
       limit,
       offset,
-      order: [
-        [
-          Product.sequelize.literal(`
-            CASE
-              WHEN LOWER(COALESCE(Product.title_ar, Product.title_ckb, Product.title, '')) LIKE ${startsWithQuery} THEN 0
-              WHEN LOWER(COALESCE(Product.description_ar, Product.description_ckb, Product.description, '')) LIKE ${startsWithQuery} THEN 1
-              WHEN LOWER(COALESCE(Product.title_ar, Product.title_ckb, Product.title, '')) LIKE ${containsQuery} THEN 2
-              WHEN LOWER(COALESCE(Product.description_ar, Product.description_ckb, Product.description, '')) LIKE ${containsQuery} THEN 3
-              ELSE 4
-            END
-          `),
-          "ASC",
-        ],
-        ["createdAt", "DESC"],
-      ],
+      order,
     });
 
     const productsWithFavorite = products.map((product) => {
