@@ -17,6 +17,10 @@ const Order = sequelize.define(
       type: DataTypes.STRING,
       allowNull: false,
     },
+    secondaryPhone: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
     address: {
       type: DataTypes.STRING,
       allowNull: false,

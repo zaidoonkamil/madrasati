@@ -175,6 +175,10 @@ async function ensureSchema(sequelize) {
     type: DataTypes.STRING,
     allowNull: true,
   });
+  await ensureColumn(queryInterface, "Orders", "secondaryPhone", {
+    type: DataTypes.STRING,
+    allowNull: true,
+  });
 }
 
 module.exports = ensureSchema;

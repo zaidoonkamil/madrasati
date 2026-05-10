@@ -69,6 +69,7 @@ router.get("/orders/admin/status", async (req, res) => {
         return {
           id: order.id,
           phone: order.phone,
+          secondaryPhone: order.secondaryPhone,
           address: order.address,
           deliveryType: order.deliveryType || "standard",
           status: order.status,
@@ -113,13 +114,13 @@ router.get("/orders/admin/status", async (req, res) => {
 
 router.post("/orders/:userId", uploads.none(), async (req, res) => {
   const userId = req.params.userId;
-  const { phone, address, products } = req.body;
+  const { phone, secondaryPhone, address, products } = req.body;
   const couponCode = normalizeCode(req.body.couponCode);
   const deliveryType = DELIVERY_TYPES.includes(req.body.deliveryType)
     ? req.body.deliveryType
     : "standard";
 
-  if (!phone || (deliveryType !== "pickup" && !address)) {
+  if (deliveryType !== "pickup" && !address) {
     return res.status(400).json({ error: "رقم الهاتف والعنوان مطلوبان" });
   }
 
@@ -128,6 +129,16 @@ router.post("/orders/:userId", uploads.none(), async (req, res) => {
   }
 
   try {
+    const orderingUser = await User.findByPk(userId, {
+      attributes: ["id", "phone"],
+    });
+    if (!orderingUser) {
+      return res.status(404).json({ error: "المستخدم غير موجود" });
+    }
+    if (!orderingUser.phone && !phone) {
+      return res.status(400).json({ error: "رقم الهاتف مطلوب" });
+    }
+
     for (const item of products) {
       if (typeof item.productId !== "number" || typeof item.quantity !== "number" || item.quantity <= 0) {
         return res.status(400).json({ error: "بيانات المنتجات غير صحيحة" });
@@ -177,7 +188,8 @@ router.post("/orders/:userId", uploads.none(), async (req, res) => {
 
     const order = await Order.create({
       userId,
-      phone,
+      phone: orderingUser.phone || phone,
+      secondaryPhone: secondaryPhone || null,
       address: address || "استلام من المتجر",
       deliveryType,
       totalPrice: Math.max(totalPrice - discountAmount, 0),
