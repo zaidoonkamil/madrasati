@@ -4,6 +4,7 @@ const { Server } = require("socket.io");
 const { Op } = require("sequelize");
 const sequelize = require("./config/db");
 const { Product, Category } = require("./models");
+const ensureSchema = require("./migrations/ensureSchema");
 
 const usersRouter = require("./routes/user");
 const adsRouter = require("./routes/ads");
@@ -64,10 +65,17 @@ sequelize
   .sync({ alter: true })
   .then(async () => {
     console.log("Database & tables synced!");
+    await ensureSchema(sequelize);
     await cleanupProductsWithoutSubcategory();
   })
-  .catch((err) => {
+  .catch(async (err) => {
     console.error("Error syncing database:", err);
+    try {
+      await ensureSchema(sequelize);
+      console.log("Fallback schema check completed.");
+    } catch (schemaError) {
+      console.error("Error ensuring schema:", schemaError);
+    }
   });
 
 const app = express();

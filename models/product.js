@@ -42,13 +42,11 @@ const Product = sequelize.define("Product", {
     },
     colors: {
         type: DataTypes.JSON,
-        allowNull: false,
-        defaultValue: [],
+        allowNull: true,
     },
     sizes: {
         type: DataTypes.JSON,
-        allowNull: false,
-        defaultValue: [],
+        allowNull: true,
     },
     images: {
         type: DataTypes.JSON,
