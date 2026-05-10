@@ -11,6 +11,8 @@ const ChatMessage = require("./ChatMessage");
 const AppSetting = require("./AppSetting");
 const Coupon = require("./Coupon");
 const CouponUsage = require("./CouponUsage");
+const Faq = require("./Faq");
+const CustomRequest = require("./CustomRequest");
 
 User.hasMany(Order, { foreignKey: "userId", as: "orders", onDelete: "CASCADE" });
 Order.belongsTo(User, { foreignKey: "userId", as: "user", onDelete: "CASCADE" });
@@ -61,6 +63,9 @@ CouponUsage.belongsTo(User, { foreignKey: "userId", as: "user", onDelete: "CASCA
 Order.hasOne(CouponUsage, { foreignKey: "orderId", as: "couponUsage", onDelete: "SET NULL" });
 CouponUsage.belongsTo(Order, { foreignKey: "orderId", as: "order", onDelete: "SET NULL" });
 
+User.hasMany(CustomRequest, { foreignKey: "userId", as: "customRequests", onDelete: "CASCADE" });
+CustomRequest.belongsTo(User, { foreignKey: "userId", as: "user", onDelete: "CASCADE" });
+
 module.exports = {
   User,
   UserDevice,
@@ -75,4 +80,6 @@ module.exports = {
   AppSetting,
   Coupon,
   CouponUsage,
+  Faq,
+  CustomRequest,
 };

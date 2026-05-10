@@ -132,12 +132,46 @@ async function ensureCouponUsagesTable(queryInterface) {
   console.log("Created missing CouponUsages table");
 }
 
+async function ensureFaqsTable(queryInterface) {
+  if (await tableExists(queryInterface, "Faqs")) return;
+
+  await queryInterface.createTable("Faqs", {
+    id: { type: DataTypes.INTEGER, autoIncrement: true, primaryKey: true, allowNull: false },
+    question: { type: DataTypes.TEXT, allowNull: false },
+    answer: { type: DataTypes.TEXT, allowNull: false },
+    isActive: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
+    createdAt: { type: DataTypes.DATE, allowNull: false, defaultValue: DataTypes.NOW },
+    updatedAt: { type: DataTypes.DATE, allowNull: false, defaultValue: DataTypes.NOW },
+  });
+  console.log("Created missing Faqs table");
+}
+
+async function ensureCustomRequestsTable(queryInterface) {
+  if (await tableExists(queryInterface, "CustomRequests")) return;
+
+  await queryInterface.createTable("CustomRequests", {
+    id: { type: DataTypes.INTEGER, autoIncrement: true, primaryKey: true, allowNull: false },
+    userId: { type: DataTypes.INTEGER, allowNull: false },
+    description: { type: DataTypes.TEXT, allowNull: false },
+    status: {
+      type: DataTypes.ENUM("pending", "reviewed", "completed", "cancelled"),
+      allowNull: false,
+      defaultValue: "pending",
+    },
+    createdAt: { type: DataTypes.DATE, allowNull: false, defaultValue: DataTypes.NOW },
+    updatedAt: { type: DataTypes.DATE, allowNull: false, defaultValue: DataTypes.NOW },
+  });
+  console.log("Created missing CustomRequests table");
+}
+
 async function ensureSchema(sequelize) {
   const queryInterface = sequelize.getQueryInterface();
 
   await ensureAppSettingsTable(queryInterface);
   await ensureCouponsTable(queryInterface);
   await ensureCouponUsagesTable(queryInterface);
+  await ensureFaqsTable(queryInterface);
+  await ensureCustomRequestsTable(queryInterface);
 
   await ensureColumn(queryInterface, "Products", "colors", {
     type: DataTypes.JSON,
