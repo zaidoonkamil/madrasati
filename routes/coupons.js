@@ -68,6 +68,20 @@ router.patch("/coupons/:id", uploads.none(), async (req, res) => {
   }
 });
 
+router.delete("/coupons/:id", async (req, res) => {
+  try {
+    const coupon = await Coupon.findByPk(req.params.id);
+    if (!coupon) return res.status(404).json({ error: "الكوبون غير موجود" });
+
+    await CouponUsage.destroy({ where: { couponId: coupon.id } });
+    await coupon.destroy();
+    res.status(200).json({ message: "تم حذف الكوبون" });
+  } catch (error) {
+    console.error("Error deleting coupon:", error);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
 router.post("/coupons/validate", uploads.none(), async (req, res) => {
   try {
     const code = normalizeCode(req.body.code);
