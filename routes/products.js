@@ -18,6 +18,24 @@ function subcategoryInclude(required = true) {
   };
 }
 
+function parseTextOptions(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) {
+    return value.map((item) => item.toString().trim()).filter(Boolean);
+  }
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed)) {
+      return parsed.map((item) => item.toString().trim()).filter(Boolean);
+    }
+  } catch (_) {}
+  return value
+    .toString()
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 router.post("/products", upload.array("images", 5), async (req, res) => {
   const {
     title,
@@ -30,6 +48,8 @@ router.post("/products", upload.array("images", 5), async (req, res) => {
     description_ar,
     description_ckb,
     stock,
+    colors,
+    sizes,
   } = req.body;
 
   if (!title || !price) {
@@ -62,6 +82,8 @@ router.post("/products", upload.array("images", 5), async (req, res) => {
       description_ckb: description_ckb || null,
       price,
       stock: stockValue,
+      colors: parseTextOptions(colors),
+      sizes: parseTextOptions(sizes),
       images,
       userId,
       categoryId,
@@ -78,8 +100,8 @@ router.get("/products/search", async (req, res) => {
   const query = (req.query.q || "").trim().toLowerCase();
   const userId = parseInt(req.query.userId);
   const categoryId = parseInt(req.query.categoryId);
-  const minPrice = parseInt(req.query.minPrice);
-  const maxPrice = parseInt(req.query.maxPrice);
+  let minPrice = parseFloat(req.query.minPrice);
+  let maxPrice = parseFloat(req.query.maxPrice);
   const availableOnly = req.query.availableOnly === "true";
   const favoritesOnly = req.query.favoritesOnly === "true";
   const sortBy = req.query.sortBy || "relevance";
@@ -91,7 +113,7 @@ router.get("/products/search", async (req, res) => {
     !Number.isNaN(minPrice) ||
     !Number.isNaN(maxPrice) ||
     availableOnly ||
-    favoritesOnly ||
+    (favoritesOnly && !Number.isNaN(userId) && userId > 0) ||
     sortBy !== "relevance";
 
   if ((!query || query.length < 2) && !hasFilters) {
@@ -104,6 +126,12 @@ router.get("/products/search", async (req, res) => {
   }
 
   try {
+    if (!Number.isNaN(minPrice) && !Number.isNaN(maxPrice) && minPrice > maxPrice) {
+      const tempPrice = minPrice;
+      minPrice = maxPrice;
+      maxPrice = tempPrice;
+    }
+
     const include = [
       {
         model: User,
@@ -113,6 +141,15 @@ router.get("/products/search", async (req, res) => {
       },
       subcategoryInclude(true),
     ];
+
+    if (favoritesOnly && (Number.isNaN(userId) || userId <= 0)) {
+      return res.json({
+        totalItems: 0,
+        totalPages: 0,
+        currentPage: page,
+        products: [],
+      });
+    }
 
     if (!Number.isNaN(userId) && userId > 0) {
       include.push({
@@ -141,7 +178,24 @@ router.get("/products/search", async (req, res) => {
     }
 
     if (!Number.isNaN(categoryId)) {
-      productWhere.categoryId = categoryId;
+      const selectedCategory = await Category.findByPk(categoryId, {
+        attributes: ["id", "parentId"],
+        include: [
+          {
+            model: Category,
+            as: "subcategories",
+            attributes: ["id"],
+            required: false,
+          },
+        ],
+      });
+
+      if (selectedCategory && selectedCategory.parentId === null) {
+        const subcategoryIds = (selectedCategory.subcategories || []).map((item) => item.id);
+        productWhere.categoryId = { [Op.in]: subcategoryIds };
+      } else {
+        productWhere.categoryId = categoryId;
+      }
     }
 
     if (!Number.isNaN(minPrice) || !Number.isNaN(maxPrice)) {
@@ -365,12 +419,16 @@ router.patch("/products/:id", upload.none(), async (req, res) => {
       return res.status(404).json({ error: "المنتج غير موجود" });
     }
 
-    const allowedFields = ["title", "description", "price", "stock"];
+    const allowedFields = ["title", "description", "price", "stock", "colors", "sizes"];
     for (const field of allowedFields) {
       if (req.body[field] !== undefined) {
-        product[field] = field === "price" || field === "stock"
-          ? parseInt(req.body[field]) || 0
-          : req.body[field];
+        if (field === "price" || field === "stock") {
+          product[field] = parseInt(req.body[field]) || 0;
+        } else if (field === "colors" || field === "sizes") {
+          product[field] = parseTextOptions(req.body[field]);
+        } else {
+          product[field] = req.body[field];
+        }
       }
     }
 

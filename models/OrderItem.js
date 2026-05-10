@@ -22,7 +22,15 @@ const OrderItem = sequelize.define("OrderItem", {
   priceAtOrder: { 
     type: DataTypes.FLOAT,
     allowNull: false,
-  }
+  },
+  selectedColor: {
+    type: DataTypes.STRING,
+    allowNull: true,
+  },
+  selectedSize: {
+    type: DataTypes.STRING,
+    allowNull: true,
+  },
 }, {
   timestamps: false,
 });

@@ -15,6 +15,8 @@ const basketRouter = require("./routes/Basket");
 const statsRouter = require("./routes/stats");
 const notifications = require("./routes/notifications.js");
 const chat = require("./routes/chatRoutes");
+const appSettingsRouter = require("./routes/appSettings");
+const { router: couponsRouter } = require("./routes/coupons");
 
 let whatsappRouter = null;
 let startWhatsAppAutoInit = null;
@@ -90,6 +92,8 @@ app.use("/", basketRouter);
 app.use("/", notifications);
 app.use("/", statsRouter);
 app.use("/", chat.router);
+app.use("/", appSettingsRouter);
+app.use("/", couponsRouter);
 
 if (whatsappRouter) {
   app.use("/", whatsappRouter);

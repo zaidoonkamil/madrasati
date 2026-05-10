@@ -4,8 +4,25 @@ const { Basket, BasketItem, Product } = require("../models");
 const multer = require("multer");
 const uploads = multer();
 
+function normalizeOption(value) {
+  const text = (value || "").toString().trim();
+  return text.length ? text : null;
+}
+
+function validateProductOption(product, field, selectedValue, label) {
+  const options = Array.isArray(product[field]) ? product[field] : [];
+  if (options.length === 0) return null;
+  if (!selectedValue) return `يرجى اختيار ${label}`;
+  if (!options.map((item) => item.toString()).includes(selectedValue)) {
+    return `${label} المختار غير متوفر لهذا المنتج`;
+  }
+  return null;
+}
+
 router.post("/basket", uploads.none(), async (req, res) => {
   let { productId, quantity, userId } = req.body;
+  const selectedColor = normalizeOption(req.body.selectedColor);
+  const selectedSize = normalizeOption(req.body.selectedSize);
 
   productId = parseInt(productId);
   quantity = parseInt(quantity) || 1;
@@ -19,6 +36,12 @@ router.post("/basket", uploads.none(), async (req, res) => {
     if (!product) {
       return res.status(404).json({ error: "المنتج غير موجود" });
     }
+
+    const colorError = validateProductOption(product, "colors", selectedColor, "اللون");
+    if (colorError) return res.status(400).json({ error: colorError });
+
+    const sizeError = validateProductOption(product, "sizes", selectedSize, "القياس");
+    if (sizeError) return res.status(400).json({ error: sizeError });
 
     let basket = await Basket.findOne({ where: { userId } });
     if (!basket) {
@@ -38,7 +61,7 @@ router.post("/basket", uploads.none(), async (req, res) => {
     }
 
     let basketItem = await BasketItem.findOne({
-      where: { basketId: basket.id, productId },
+      where: { basketId: basket.id, productId, selectedColor, selectedSize },
     });
 
     if (basketItem) {
@@ -49,6 +72,8 @@ router.post("/basket", uploads.none(), async (req, res) => {
         basketId: basket.id,
         productId,
         quantity,
+        selectedColor,
+        selectedSize,
       });
     }
 
@@ -72,7 +97,7 @@ router.get("/basket/:id", uploads.none(), async (req, res) => {
 
     const basketItems = await BasketItem.findAll({
       where: { basketId: basket.id },
-      include: [{ model: Product, attributes: ['id', 'title', 'price', 'images', 'stock'] }],
+      include: [{ model: Product, attributes: ['id', 'title', 'price', 'images', 'stock', 'colors', 'sizes'] }],
     });
 
     // نُعيد العناصر كـ JSON عادي (بدون حقل basket)
@@ -80,6 +105,8 @@ router.get("/basket/:id", uploads.none(), async (req, res) => {
       id: item.id,
       productId: item.productId,
       quantity: item.quantity,
+      selectedColor: item.selectedColor,
+      selectedSize: item.selectedSize,
       product: item.Product ? item.Product.toJSON() : null,
       createdAt: item.createdAt,
       updatedAt: item.updatedAt,

@@ -35,6 +35,15 @@ const Order = sequelize.define(
       type: DataTypes.FLOAT,
       allowNull: false,
     },
+    discountAmount: {
+      type: DataTypes.FLOAT,
+      allowNull: false,
+      defaultValue: 0,
+    },
+    couponCode: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
   },
   {
     timestamps: true,

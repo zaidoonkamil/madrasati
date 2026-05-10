@@ -20,6 +20,14 @@ const BasketItem = sequelize.define("BasketItem", {
      allowNull: false,
       defaultValue: 1 
     },
+  selectedColor: {
+    type: DataTypes.STRING,
+    allowNull: true,
+  },
+  selectedSize: {
+    type: DataTypes.STRING,
+    allowNull: true,
+  },
 }, {
   timestamps: true,
 });

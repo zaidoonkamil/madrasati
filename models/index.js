@@ -8,6 +8,9 @@ const BasketItem = require("./BasketItem");
 const Order = require("./Order");
 const OrderItem = require("./OrderItem");
 const ChatMessage = require("./ChatMessage");
+const AppSetting = require("./AppSetting");
+const Coupon = require("./Coupon");
+const CouponUsage = require("./CouponUsage");
 
 User.hasMany(Order, { foreignKey: "userId", as: "orders", onDelete: "CASCADE" });
 Order.belongsTo(User, { foreignKey: "userId", as: "user", onDelete: "CASCADE" });
@@ -51,6 +54,13 @@ Category.belongsTo(Category, { foreignKey: "parentId", as: "parent", onDelete: "
 Favorite.belongsTo(Product, { foreignKey: "productId", as: "product", onDelete: "CASCADE" });
 Product.hasMany(Favorite, { foreignKey: "productId", as: "favorites", onDelete: "CASCADE" });
 
+Coupon.hasMany(CouponUsage, { foreignKey: "couponId", as: "usages", onDelete: "CASCADE" });
+CouponUsage.belongsTo(Coupon, { foreignKey: "couponId", as: "coupon", onDelete: "CASCADE" });
+User.hasMany(CouponUsage, { foreignKey: "userId", as: "couponUsages", onDelete: "CASCADE" });
+CouponUsage.belongsTo(User, { foreignKey: "userId", as: "user", onDelete: "CASCADE" });
+Order.hasOne(CouponUsage, { foreignKey: "orderId", as: "couponUsage", onDelete: "SET NULL" });
+CouponUsage.belongsTo(Order, { foreignKey: "orderId", as: "order", onDelete: "SET NULL" });
+
 module.exports = {
   User,
   UserDevice,
@@ -62,4 +72,7 @@ module.exports = {
   Order,
   OrderItem,
   ChatMessage,
+  AppSetting,
+  Coupon,
+  CouponUsage,
 };
