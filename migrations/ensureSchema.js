@@ -164,6 +164,23 @@ async function ensureCustomRequestsTable(queryInterface) {
   console.log("Created missing CustomRequests table");
 }
 
+async function ensureProductRecommendationsTable(queryInterface) {
+  if (await tableExists(queryInterface, "ProductRecommendations")) return;
+
+  await queryInterface.createTable("ProductRecommendations", {
+    id: { type: DataTypes.INTEGER, autoIncrement: true, primaryKey: true, allowNull: false },
+    productId: { type: DataTypes.INTEGER, allowNull: false },
+    recommendedProductId: { type: DataTypes.INTEGER, allowNull: false },
+    createdAt: { type: DataTypes.DATE, allowNull: false, defaultValue: DataTypes.NOW },
+    updatedAt: { type: DataTypes.DATE, allowNull: false, defaultValue: DataTypes.NOW },
+  });
+  await queryInterface.addIndex("ProductRecommendations", ["productId", "recommendedProductId"], {
+    unique: true,
+    name: "product_recommendations_unique_pair",
+  });
+  console.log("Created missing ProductRecommendations table");
+}
+
 async function ensureSchema(sequelize) {
   const queryInterface = sequelize.getQueryInterface();
 
@@ -172,6 +189,7 @@ async function ensureSchema(sequelize) {
   await ensureCouponUsagesTable(queryInterface);
   await ensureFaqsTable(queryInterface);
   await ensureCustomRequestsTable(queryInterface);
+  await ensureProductRecommendationsTable(queryInterface);
 
   await ensureColumn(queryInterface, "Products", "colors", {
     type: DataTypes.JSON,

@@ -13,6 +13,7 @@ const Coupon = require("./Coupon");
 const CouponUsage = require("./CouponUsage");
 const Faq = require("./Faq");
 const CustomRequest = require("./CustomRequest");
+const ProductRecommendation = require("./ProductRecommendation");
 
 User.hasMany(Order, { foreignKey: "userId", as: "orders", onDelete: "CASCADE" });
 Order.belongsTo(User, { foreignKey: "userId", as: "user", onDelete: "CASCADE" });
@@ -66,6 +67,11 @@ CouponUsage.belongsTo(Order, { foreignKey: "orderId", as: "order", onDelete: "SE
 User.hasMany(CustomRequest, { foreignKey: "userId", as: "customRequests", onDelete: "CASCADE" });
 CustomRequest.belongsTo(User, { foreignKey: "userId", as: "user", onDelete: "CASCADE" });
 
+Product.hasMany(ProductRecommendation, { foreignKey: "productId", as: "recommendationLinks", onDelete: "CASCADE" });
+ProductRecommendation.belongsTo(Product, { foreignKey: "productId", as: "sourceProduct", onDelete: "CASCADE" });
+Product.hasMany(ProductRecommendation, { foreignKey: "recommendedProductId", as: "recommendedInLinks", onDelete: "CASCADE" });
+ProductRecommendation.belongsTo(Product, { foreignKey: "recommendedProductId", as: "recommendedProduct", onDelete: "CASCADE" });
+
 module.exports = {
   User,
   UserDevice,
@@ -82,4 +88,5 @@ module.exports = {
   CouponUsage,
   Faq,
   CustomRequest,
+  ProductRecommendation,
 };

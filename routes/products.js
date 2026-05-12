@@ -1,7 +1,7 @@
 ﻿const express = require("express");
 const router = express.Router();
 const { Op, fn, col, where } = require("sequelize");
-const { Product, User, Category } = require("../models");
+const { Product, User, Category, ProductRecommendation } = require("../models");
 const upload = require("../middlewares/uploads");
 
 function subcategoryInclude(required = true) {
@@ -34,6 +34,51 @@ function parseTextOptions(value) {
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function parseProductIds(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) {
+    return value.map((item) => parseInt(item)).filter((item) => !Number.isNaN(item));
+  }
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed)) {
+      return parsed.map((item) => parseInt(item)).filter((item) => !Number.isNaN(item));
+    }
+  } catch (_) {}
+  return value
+    .toString()
+    .split(",")
+    .map((item) => parseInt(item.trim()))
+    .filter((item) => !Number.isNaN(item));
+}
+
+async function productListWithFavorite(products, userId) {
+  let favoriteIds = new Set();
+  if (!Number.isNaN(userId) && userId > 0) {
+    const favorites = await Product.findAll({
+      where: { id: products.map((product) => product.id) },
+      include: [
+        {
+          model: User,
+          as: "favoritedByUsers",
+          where: { id: userId },
+          required: true,
+          attributes: ["id"],
+          through: { attributes: [] },
+        },
+      ],
+    });
+    favoriteIds = new Set(favorites.map((product) => product.id));
+  }
+
+  return products.map((product) => {
+    const prodJson = product.toJSON();
+    prodJson.isFavorite = favoriteIds.has(product.id);
+    delete prodJson.favoritedByUsers;
+    return prodJson;
+  });
 }
 
 router.post("/products", upload.array("images", 5), async (req, res) => {
@@ -383,6 +428,104 @@ router.get("/products/:id", async (req, res) => {
     });
   } catch (error) {
     console.error("Error fetching products:", error);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+router.get("/products/:id/marketing", async (req, res) => {
+  const productId = parseInt(req.params.id);
+  const userId = parseInt(req.query.userId);
+
+  if (Number.isNaN(productId)) {
+    return res.status(400).json({ error: "معرف المنتج غير صالح" });
+  }
+
+  try {
+    const links = await ProductRecommendation.findAll({
+      where: { productId },
+      order: [["createdAt", "ASC"]],
+    });
+    const recommendedIds = links.map((item) => item.recommendedProductId);
+
+    if (recommendedIds.length === 0) {
+      return res.json({
+        totalItems: 0,
+        totalPages: 0,
+        currentPage: 1,
+        products: [],
+      });
+    }
+
+    const products = await Product.findAll({
+      where: { id: recommendedIds },
+      include: [
+        {
+          model: User,
+          as: "seller",
+          attributes: ["id", "name", "phone", "location", "role", "isVerified", "image"],
+          required: false,
+        },
+        subcategoryInclude(false),
+      ],
+    });
+
+    const byId = new Map(products.map((product) => [product.id, product]));
+    const sortedProducts = recommendedIds
+      .map((id) => byId.get(id))
+      .filter(Boolean);
+
+    res.json({
+      totalItems: sortedProducts.length,
+      totalPages: 1,
+      currentPage: 1,
+      products: await productListWithFavorite(sortedProducts, userId),
+    });
+  } catch (error) {
+    console.error("Error fetching marketing products:", error);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+router.patch("/products/:id/marketing", upload.none(), async (req, res) => {
+  const productId = parseInt(req.params.id);
+  const productIds = [...new Set(parseProductIds(req.body.productIds))]
+    .filter((id) => id !== productId)
+    .slice(0, 12);
+
+  if (Number.isNaN(productId)) {
+    return res.status(400).json({ error: "معرف المنتج غير صالح" });
+  }
+
+  try {
+    const product = await Product.findByPk(productId);
+    if (!product) {
+      return res.status(404).json({ error: "المنتج غير موجود" });
+    }
+
+    if (productIds.length > 0) {
+      const count = await Product.count({ where: { id: productIds } });
+      if (count !== productIds.length) {
+        return res.status(400).json({ error: "بعض المنتجات المختارة غير موجودة" });
+      }
+    }
+
+    await ProductRecommendation.destroy({ where: { productId } });
+    if (productIds.length > 0) {
+      await ProductRecommendation.bulkCreate(
+        productIds.map((recommendedProductId) => ({ productId, recommendedProductId }))
+      );
+    }
+
+    const links = await ProductRecommendation.findAll({
+      where: { productId },
+      order: [["createdAt", "ASC"]],
+    });
+    res.json({
+      productId,
+      productIds: links.map((item) => item.recommendedProductId),
+    });
+  } catch (error) {
+    console.error("Error updating marketing products:", error);
     res.status(500).json({ error: "Internal Server Error" });
   }
 });
