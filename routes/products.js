@@ -93,6 +93,7 @@ router.post("/products", upload.array("images", 5), async (req, res) => {
     description_ar,
     description_ckb,
     stock,
+    lowStockAlert,
     colors,
     sizes,
   } = req.body;
@@ -105,6 +106,8 @@ router.post("/products", upload.array("images", 5), async (req, res) => {
   if (stockValue < 0) {
     return res.status(400).json({ error: "المخزون يجب أن يكون صفراً أو أكثر" });
   }
+  const lowStockAlertValue = parseInt(lowStockAlert);
+  const safeLowStockAlert = Number.isNaN(lowStockAlertValue) || lowStockAlertValue < 0 ? 3 : lowStockAlertValue;
 
   if (!req.files || req.files.length === 0) {
     return res.status(400).json({ error: "يجب رفع صورة واحدة على الأقل" });
@@ -127,6 +130,7 @@ router.post("/products", upload.array("images", 5), async (req, res) => {
       description_ckb: description_ckb || null,
       price,
       stock: stockValue,
+      lowStockAlert: safeLowStockAlert,
       colors: parseTextOptions(colors),
       sizes: parseTextOptions(sizes),
       images,
@@ -377,6 +381,53 @@ router.get("/products/featured", async (req, res) => {
   }
 });
 
+router.get("/products/low-stock", async (req, res) => {
+  const page = parseInt(req.query.page) || 1;
+  const limit = Math.min(parseInt(req.query.limit) || 20, 50);
+  const maxStock = parseInt(req.query.maxStock);
+  const offset = (page - 1) * limit;
+
+  try {
+    const whereClause = Number.isNaN(maxStock)
+      ? Product.sequelize.where(
+          Product.sequelize.col("stock"),
+          Op.lte,
+          Product.sequelize.col("lowStockAlert")
+        )
+      : { stock: { [Op.lte]: Math.max(maxStock, 0) } };
+
+    const { count, rows: products } = await Product.findAndCountAll({
+      where: whereClause,
+      include: [
+        {
+          model: User,
+          as: "seller",
+          attributes: ["id", "name", "phone", "location", "role", "isVerified", "image"],
+          required: false,
+        },
+        subcategoryInclude(false),
+      ],
+      distinct: true,
+      limit,
+      offset,
+      order: [
+        ["stock", "ASC"],
+        ["updatedAt", "DESC"],
+      ],
+    });
+
+    res.json({
+      totalItems: count,
+      totalPages: Math.ceil(count / limit),
+      currentPage: page,
+      products,
+    });
+  } catch (error) {
+    console.error("Error fetching low stock products:", error);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
 router.get("/products/:id", async (req, res) => {
   const userId = req.params.id;
 
@@ -562,10 +613,18 @@ router.patch("/products/:id", upload.none(), async (req, res) => {
       return res.status(404).json({ error: "المنتج غير موجود" });
     }
 
-    const allowedFields = ["title", "description", "price", "stock", "colors", "sizes"];
+    const allowedFields = [
+      "title",
+      "description",
+      "price",
+      "stock",
+      "lowStockAlert",
+      "colors",
+      "sizes",
+    ];
     for (const field of allowedFields) {
       if (req.body[field] !== undefined) {
-        if (field === "price" || field === "stock") {
+        if (field === "price" || field === "stock" || field === "lowStockAlert") {
           product[field] = parseInt(req.body[field]) || 0;
         } else if (field === "colors" || field === "sizes") {
           product[field] = parseTextOptions(req.body[field]);
@@ -575,8 +634,8 @@ router.patch("/products/:id", upload.none(), async (req, res) => {
       }
     }
 
-    if (product.price < 0 || product.stock < 0) {
-      return res.status(400).json({ error: "السعر والمخزون يجب أن يكونا صفراً أو أكثر" });
+    if (product.price < 0 || product.stock < 0 || product.lowStockAlert < 0) {
+      return res.status(400).json({ error: "السعر والمخزون وحد التنبيه يجب أن تكون صفراً أو أكثر" });
     }
 
     await product.save();

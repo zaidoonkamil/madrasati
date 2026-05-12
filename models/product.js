@@ -40,6 +40,11 @@ const Product = sequelize.define("Product", {
         allowNull: false,
         defaultValue: 0,
     },
+    lowStockAlert: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 3,
+    },
     colors: {
         type: DataTypes.JSON,
         allowNull: true,

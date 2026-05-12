@@ -199,6 +199,11 @@ async function ensureSchema(sequelize) {
     type: DataTypes.JSON,
     allowNull: true,
   });
+  await ensureColumn(queryInterface, "Products", "lowStockAlert", {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    defaultValue: 3,
+  });
 
   await ensureColumn(queryInterface, "BasketItems", "selectedColor", {
     type: DataTypes.STRING,
