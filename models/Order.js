@@ -44,6 +44,11 @@ const Order = sequelize.define(
       allowNull: false,
       defaultValue: 0,
     },
+    rewardDiscountAmount: {
+      type: DataTypes.FLOAT,
+      allowNull: false,
+      defaultValue: 0,
+    },
     couponCode: {
       type: DataTypes.STRING,
       allowNull: true,

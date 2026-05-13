@@ -228,6 +228,11 @@ async function ensureSchema(sequelize) {
     allowNull: false,
     defaultValue: 0,
   });
+  await ensureColumn(queryInterface, "Orders", "rewardDiscountAmount", {
+    type: DataTypes.FLOAT,
+    allowNull: false,
+    defaultValue: 0,
+  });
   await ensureColumn(queryInterface, "Orders", "couponCode", {
     type: DataTypes.STRING,
     allowNull: true,

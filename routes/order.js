@@ -25,6 +25,75 @@ function validateProductOption(product, field, selectedValue, label) {
   return null;
 }
 
+function expandUnitsFromItems(items, priceGetter) {
+  const units = [];
+  for (const item of items) {
+    const quantity = parseInt(item.quantity) || 0;
+    const price = Number(priceGetter(item)) || 0;
+    for (let i = 0; i < quantity; i++) {
+      units.push(price);
+    }
+  }
+  return units;
+}
+
+async function getPreviousPurchaseUnitPrices(userId) {
+  const orders = await Order.findAll({
+    where: {
+      userId,
+      status: { [Op.ne]: "cancelled" },
+    },
+    order: [
+      ["createdAt", "ASC"],
+      ["id", "ASC"],
+    ],
+    include: [{ model: OrderItem }],
+  });
+
+  const units = [];
+  for (const order of orders) {
+    const items = [...(order.OrderItems || [])].sort((a, b) => a.id - b.id);
+    units.push(...expandUnitsFromItems(items, (item) => item.priceAtOrder));
+  }
+  return units;
+}
+
+function calculateRewardDiscount(previousUnits, currentUnits) {
+  const timeline = [...previousUnits];
+  let rewardDiscountAmount = 0;
+  const rewards = [];
+
+  currentUnits.forEach((price, index) => {
+    const purchaseNumber = timeline.length + 1;
+    if (purchaseNumber % 6 === 0 && timeline.length >= 5) {
+      const previousFive = timeline.slice(-5);
+      const previousFiveTotal = previousFive.reduce((sum, value) => sum + value, 0);
+      const average = previousFiveTotal / 5;
+      const discount = Math.round(average * 0.10);
+      rewardDiscountAmount += discount;
+      rewards.push({
+        itemIndex: index,
+        purchaseNumber,
+        average,
+        discount,
+      });
+    }
+    timeline.push(price);
+  });
+
+  return {
+    rewardDiscountAmount,
+    rewards,
+    completedPurchases: previousUnits.length,
+    remainingUntilReward: (6 - (timeline.length % 6)) % 6,
+  };
+}
+
+function rewardMessage(rewardDiscountAmount) {
+  if (rewardDiscountAmount <= 0) return null;
+  return `مبروك! حصلت على خصم هدية بقيمة ${rewardDiscountAmount.toLocaleString("en-US")} د.ع`;
+}
+
 router.get("/orders/admin/status", async (req, res) => {
   const status = (req.query.status || "").trim();
   const page = parseInt(req.query.page) || 1;
@@ -77,6 +146,7 @@ router.get("/orders/admin/status", async (req, res) => {
           totalItems: totalItemsOrder,
           totalPrice,
           discountAmount: order.discountAmount || 0,
+          rewardDiscountAmount: order.rewardDiscountAmount || 0,
           couponCode: order.couponCode,
           items: order.OrderItems.map((item) => ({
             id: item.id,
@@ -108,6 +178,66 @@ router.get("/orders/admin/status", async (req, res) => {
     });
   } catch (error) {
     console.error("Error fetching admin orders by status:", error);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+router.get("/orders/:userId/reward-preview", uploads.none(), async (req, res) => {
+  const userId = req.params.userId;
+
+  try {
+    const basket = await Basket.findOne({
+      where: { userId },
+      include: [
+        {
+          model: BasketItem,
+          include: [{ model: Product, attributes: ["id", "title", "price"] }],
+        },
+      ],
+    });
+
+    const basketItems = basket?.BasketItems || [];
+    const currentUnits = expandUnitsFromItems(
+      basketItems.filter((item) => item.Product),
+      (item) => item.Product.price
+    );
+    const previousUnits = await getPreviousPurchaseUnitPrices(userId);
+    const reward = calculateRewardDiscount(previousUnits, currentUnits);
+
+    res.json({
+      ...reward,
+      message: rewardMessage(reward.rewardDiscountAmount),
+    });
+  } catch (error) {
+    console.error("Error fetching reward preview:", error);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+router.post("/orders/:userId/reward-preview", uploads.none(), async (req, res) => {
+  const userId = req.params.userId;
+  const { products } = req.body;
+
+  if (!products || !Array.isArray(products)) {
+    return res.status(400).json({ error: "يجب تمرير قائمة المنتجات" });
+  }
+
+  try {
+    const productIds = products.map((p) => p.productId);
+    const dbProducts = await Product.findAll({ where: { id: productIds } });
+    const currentUnits = expandUnitsFromItems(products, (item) => {
+      const prod = dbProducts.find((p) => p.id === item.productId);
+      return prod ? prod.price : 0;
+    });
+    const previousUnits = await getPreviousPurchaseUnitPrices(userId);
+    const reward = calculateRewardDiscount(previousUnits, currentUnits);
+
+    res.json({
+      ...reward,
+      message: rewardMessage(reward.rewardDiscountAmount),
+    });
+  } catch (error) {
+    console.error("Error calculating reward preview:", error);
     res.status(500).json({ error: "Internal Server Error" });
   }
 });
@@ -170,8 +300,16 @@ router.post("/orders/:userId", uploads.none(), async (req, res) => {
       totalPrice += prod.price * item.quantity;
     });
 
+    const currentUnits = expandUnitsFromItems(products, (item) => {
+      const prod = dbProducts.find((p) => p.id === item.productId);
+      return prod ? prod.price : 0;
+    });
+    const previousUnits = await getPreviousPurchaseUnitPrices(userId);
+    const reward = calculateRewardDiscount(previousUnits, currentUnits);
+    const rewardDiscountAmount = reward.rewardDiscountAmount;
+
     let coupon = null;
-    let discountAmount = 0;
+    let couponDiscountAmount = 0;
     if (couponCode) {
       coupon = await Coupon.findOne({ where: { code: couponCode, isActive: true } });
       if (!coupon) {
@@ -183,8 +321,13 @@ router.post("/orders/:userId", uploads.none(), async (req, res) => {
         return res.status(400).json({ error: "تم استخدام هذا الكوبون مسبقاً" });
       }
 
-      discountAmount = calculateDiscount(coupon, totalPrice);
+      couponDiscountAmount = calculateDiscount(coupon, totalPrice);
     }
+
+    const discountAmount = Math.min(
+      couponDiscountAmount + rewardDiscountAmount,
+      totalPrice
+    );
 
     const order = await Order.create({
       userId,
@@ -194,6 +337,7 @@ router.post("/orders/:userId", uploads.none(), async (req, res) => {
       deliveryType,
       totalPrice: Math.max(totalPrice - discountAmount, 0),
       discountAmount,
+      rewardDiscountAmount,
       couponCode: coupon ? coupon.code : null,
       status: "pending",
     });
@@ -204,6 +348,18 @@ router.post("/orders/:userId", uploads.none(), async (req, res) => {
         couponId: coupon.id,
         orderId: order.id,
       });
+    }
+
+    if (rewardDiscountAmount > 0) {
+      try {
+        await sendNotificationToUser(
+          orderingUser.id,
+          rewardMessage(rewardDiscountAmount),
+          "هدية مشتريات"
+        );
+      } catch (notificationError) {
+        console.error("Reward notification failed:", notificationError);
+      }
     }
 
     for (const item of products) {
@@ -243,6 +399,8 @@ router.post("/orders/:userId", uploads.none(), async (req, res) => {
     return res.status(201).json({
       message: "تم إنشاء الطلب بنجاح",
       orderId: order.id,
+      rewardDiscountAmount,
+      rewardMessage: rewardMessage(rewardDiscountAmount),
     });
   } catch (error) {
     console.error("Error creating order:", error);
@@ -332,6 +490,7 @@ router.get("/orders/:userId", uploads.none(), async (req, res) => {
           totalItems,
           totalPrice,
           discountAmount: order.discountAmount || 0,
+          rewardDiscountAmount: order.rewardDiscountAmount || 0,
           couponCode: order.couponCode,
           status: order.status,
           deliveryType: order.deliveryType || "standard",
