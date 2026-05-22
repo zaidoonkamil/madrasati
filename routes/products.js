@@ -36,6 +36,29 @@ function parseTextOptions(value) {
     .filter(Boolean);
 }
 
+function normalizeNumberText(value) {
+  if (value === null || value === undefined) return "";
+  return value
+    .toString()
+    .trim()
+    .replace(/[٠-٩]/g, (digit) => "٠١٢٣٤٥٦٧٨٩".indexOf(digit))
+    .replace(/[۰-۹]/g, (digit) => "۰۱۲۳۴۵۶۷۸۹".indexOf(digit))
+    .replace(/,/g, "")
+    .replace(/،/g, "")
+    .replace(/\s+/g, "");
+}
+
+function parsePositiveNumber(value) {
+  const number = Number(normalizeNumberText(value));
+  return Number.isFinite(number) && number > 0 ? number : null;
+}
+
+function parseNonNegativeInteger(value, fallback = 0) {
+  const number = Number(normalizeNumberText(value));
+  if (!Number.isFinite(number) || number < 0) return fallback;
+  return Math.floor(number);
+}
+
 function parseProductIds(value) {
   if (!value) return [];
   if (Array.isArray(value)) {
@@ -98,16 +121,20 @@ router.post("/products", upload.array("images", 5), async (req, res) => {
     sizes,
   } = req.body;
 
-  if (!title || !price) {
+  if (!title || price === undefined || price === null || price.toString().trim() === "") {
     return res.status(400).json({ error: "العنوان والسعر مطلوبان" });
   }
 
-  const stockValue = parseInt(stock) || 0;
+  const priceValue = parsePositiveNumber(price);
+  if (priceValue === null) {
+    return res.status(400).json({ error: "السعر يجب أن يكون رقماً صحيحاً أكبر من صفر" });
+  }
+
+  const stockValue = parseNonNegativeInteger(stock, 0);
   if (stockValue < 0) {
     return res.status(400).json({ error: "المخزون يجب أن يكون صفراً أو أكثر" });
   }
-  const lowStockAlertValue = parseInt(lowStockAlert);
-  const safeLowStockAlert = Number.isNaN(lowStockAlertValue) || lowStockAlertValue < 0 ? 3 : lowStockAlertValue;
+  const safeLowStockAlert = parseNonNegativeInteger(lowStockAlert, 3);
 
   if (!req.files || req.files.length === 0) {
     return res.status(400).json({ error: "يجب رفع صورة واحدة على الأقل" });
@@ -128,7 +155,7 @@ router.post("/products", upload.array("images", 5), async (req, res) => {
       title_ckb: title_ckb || null,
       description_ar: description_ar || null,
       description_ckb: description_ckb || null,
-      price,
+      price: priceValue,
       stock: stockValue,
       lowStockAlert: safeLowStockAlert,
       colors: parseTextOptions(colors),
@@ -624,8 +651,14 @@ router.patch("/products/:id", upload.none(), async (req, res) => {
     ];
     for (const field of allowedFields) {
       if (req.body[field] !== undefined) {
-        if (field === "price" || field === "stock" || field === "lowStockAlert") {
-          product[field] = parseInt(req.body[field]) || 0;
+        if (field === "price") {
+          const priceValue = parsePositiveNumber(req.body[field]);
+          if (priceValue === null) {
+            return res.status(400).json({ error: "السعر يجب أن يكون رقماً صحيحاً أكبر من صفر" });
+          }
+          product[field] = priceValue;
+        } else if (field === "stock" || field === "lowStockAlert") {
+          product[field] = parseNonNegativeInteger(req.body[field], 0);
         } else if (field === "colors" || field === "sizes") {
           product[field] = parseTextOptions(req.body[field]);
         } else {
