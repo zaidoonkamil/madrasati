@@ -226,6 +226,43 @@ router.get("/categories/:id/products", async (req, res) => {
   }
 });
 
+router.patch("/categories/:id", upload.array("images", 5), async (req, res) => {
+  const categoryId = req.params.id;
+  const { name, name_ar, name_ckb } = req.body;
+
+  try {
+    const category = await Category.findByPk(categoryId);
+    if (!category) {
+      return res.status(404).json({ error: "Ø§Ù„Ù‚Ø³Ù… ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯" });
+    }
+
+    if (name !== undefined) {
+      if (!name || !name.toString().trim()) {
+        return res.status(400).json({ error: "Ø§Ø³Ù… Ø§Ù„Ù‚Ø³Ù… Ù…Ø·Ù„ÙˆØ¨" });
+      }
+      category.name = name.toString().trim();
+    }
+
+    if (name_ar !== undefined) {
+      category.name_ar = name_ar ? name_ar.toString().trim() : null;
+    }
+
+    if (name_ckb !== undefined) {
+      category.name_ckb = name_ckb ? name_ckb.toString().trim() : null;
+    }
+
+    if (req.files && req.files.length > 0) {
+      category.images = req.files.map((file) => file.filename);
+    }
+
+    await category.save();
+    res.json(category);
+  } catch (error) {
+    console.error("Error updating category:", error);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
 router.delete("/categories/:id", async (req, res) => {
   const categoryId = req.params.id;
 
