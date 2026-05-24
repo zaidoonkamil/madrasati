@@ -92,7 +92,6 @@ app.use(
   })
 );
 
-app.options("*", cors());
 
 const server = http.createServer(app);
 
