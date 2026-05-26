@@ -53,6 +53,15 @@ const Order = sequelize.define(
       type: DataTypes.STRING,
       allowNull: true,
     },
+    deliveryPrice: {
+      type: DataTypes.FLOAT,
+      allowNull: false,
+      defaultValue: 0,
+    },
+    governorateId: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+    },
   },
   {
     timestamps: true,

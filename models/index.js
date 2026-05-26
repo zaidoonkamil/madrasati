@@ -14,9 +14,13 @@ const CouponUsage = require("./CouponUsage");
 const Faq = require("./Faq");
 const CustomRequest = require("./CustomRequest");
 const ProductRecommendation = require("./ProductRecommendation");
+const Governorate = require("./Governorate");
 
 User.hasMany(Order, { foreignKey: "userId", as: "orders", onDelete: "CASCADE" });
 Order.belongsTo(User, { foreignKey: "userId", as: "user", onDelete: "CASCADE" });
+
+Governorate.hasMany(Order, { foreignKey: "governorateId", as: "orders" });
+Order.belongsTo(Governorate, { foreignKey: "governorateId", as: "governorate" });
 
 Order.hasMany(OrderItem, { foreignKey: "orderId", onDelete: "CASCADE" });
 OrderItem.belongsTo(Order, { foreignKey: "orderId" });
@@ -89,4 +93,5 @@ module.exports = {
   Faq,
   CustomRequest,
   ProductRecommendation,
+  Governorate,
 };

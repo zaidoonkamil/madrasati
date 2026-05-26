@@ -21,6 +21,7 @@ const appSettingsRouter = require("./routes/appSettings");
 const { router: couponsRouter } = require("./routes/coupons");
 const faqRouter = require("./routes/faq");
 const customRequestsRouter = require("./routes/customRequests");
+const governoratesRouter = require("./routes/governorates");
 
 let whatsappRouter = null;
 let startWhatsAppAutoInit = null;
@@ -119,6 +120,7 @@ app.use("/", appSettingsRouter);
 app.use("/", couponsRouter);
 app.use("/", faqRouter);
 app.use("/", customRequestsRouter);
+app.use("/", governoratesRouter);
 
 if (whatsappRouter) {
   app.use("/", whatsappRouter);

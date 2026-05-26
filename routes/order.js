@@ -1,6 +1,6 @@
 ﻿const express = require("express");
 const router = express.Router();
-const { Order, OrderItem, Product, Basket, BasketItem, User, Coupon, CouponUsage } = require("../models");
+const { Order, OrderItem, Product, Basket, BasketItem, User, Coupon, CouponUsage, Governorate, AppSetting } = require("../models");
 const multer = require("multer");
 const uploads = multer();
 const { Op } = require("sequelize");
@@ -127,6 +127,12 @@ router.get("/orders/admin/status", async (req, res) => {
             },
           ],
         },
+        {
+          model: Governorate,
+          as: "governorate",
+          attributes: ["id", "name"],
+          required: false,
+        },
       ],
     });
 
@@ -141,6 +147,8 @@ router.get("/orders/admin/status", async (req, res) => {
           secondaryPhone: order.secondaryPhone,
           address: order.address,
           deliveryType: order.deliveryType || "standard",
+          deliveryPrice: order.deliveryPrice || 0,
+          governorate: order.governorate || null,
           status: order.status,
           createdAt: order.createdAt,
           totalItems: totalItemsOrder,
@@ -249,9 +257,14 @@ router.post("/orders/:userId", uploads.none(), async (req, res) => {
   const deliveryType = DELIVERY_TYPES.includes(req.body.deliveryType)
     ? req.body.deliveryType
     : "standard";
+  const governorateId = req.body.governorateId ? parseInt(req.body.governorateId) : null;
 
   if (deliveryType !== "pickup" && !address) {
     return res.status(400).json({ error: "رقم الهاتف والعنوان مطلوبان" });
+  }
+
+  if (deliveryType === "standard" && !governorateId) {
+    return res.status(400).json({ error: "يرجى اختيار المحافظة للتوصيل الاعتيادي" });
   }
 
   if (!products || !Array.isArray(products) || products.length === 0) {
@@ -300,6 +313,25 @@ router.post("/orders/:userId", uploads.none(), async (req, res) => {
       totalPrice += prod.price * item.quantity;
     });
 
+    // Resolve delivery price
+    let deliveryPrice = 0;
+    let resolvedGovernorateId = null;
+
+    if (deliveryType === "standard") {
+      const governorate = await Governorate.findOne({
+        where: { id: governorateId, isActive: true },
+      });
+      if (!governorate) {
+        return res.status(400).json({ error: "المحافظة المختارة غير متوفرة" });
+      }
+      deliveryPrice = governorate.deliveryPrice;
+      resolvedGovernorateId = governorate.id;
+    } else if (deliveryType === "express_basra") {
+      const deliveryRow = await AppSetting.findOne({ where: { key: "delivery" } });
+      const deliverySettings = deliveryRow ? deliveryRow.value : {};
+      deliveryPrice = parseFloat(deliverySettings.expressBasraPrice) || 2000;
+    }
+
     const currentUnits = expandUnitsFromItems(products, (item) => {
       const prod = dbProducts.find((p) => p.id === item.productId);
       return prod ? prod.price : 0;
@@ -329,16 +361,21 @@ router.post("/orders/:userId", uploads.none(), async (req, res) => {
       totalPrice
     );
 
+    const itemsTotal = Math.max(totalPrice - discountAmount, 0);
+    const finalTotal = itemsTotal + deliveryPrice;
+
     const order = await Order.create({
       userId,
       phone: orderingUser.phone || phone,
       secondaryPhone: secondaryPhone || null,
       address: address || "استلام من المتجر",
       deliveryType,
-      totalPrice: Math.max(totalPrice - discountAmount, 0),
+      totalPrice: finalTotal,
       discountAmount,
       rewardDiscountAmount,
       couponCode: coupon ? coupon.code : null,
+      deliveryPrice,
+      governorateId: resolvedGovernorateId,
       status: "pending",
     });
 
@@ -401,6 +438,8 @@ router.post("/orders/:userId", uploads.none(), async (req, res) => {
       orderId: order.id,
       rewardDiscountAmount,
       rewardMessage: rewardMessage(rewardDiscountAmount),
+      deliveryPrice,
+      totalPrice: finalTotal,
     });
   } catch (error) {
     console.error("Error creating order:", error);
@@ -476,6 +515,12 @@ router.get("/orders/:userId", uploads.none(), async (req, res) => {
             },
           ],
         },
+        {
+          model: Governorate,
+          as: "governorate",
+          attributes: ["id", "name"],
+          required: false,
+        },
       ],
     });
 
@@ -494,6 +539,8 @@ router.get("/orders/:userId", uploads.none(), async (req, res) => {
           couponCode: order.couponCode,
           status: order.status,
           deliveryType: order.deliveryType || "standard",
+          deliveryPrice: order.deliveryPrice || 0,
+          governorate: order.governorate || null,
         };
       })
       .filter((order) => order.totalItems > 0);
